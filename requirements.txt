@@ -1,0 +1,31 @@
+# --- Core Python utilities ---
+numpy
+pandas
+matplotlib
+seaborn
+
+# --- Web scraping & requests ---
+requests
+beautifulsoup4
+html5lib
+
+# --- Machine Learning ---
+scikit-learn
+joblib
+spacy
+
+# --- NLP & Tokenization ---
+# Make sure to install English model separately after install:
+# python -m spacy download en_core_web_sm
+
+# --- App & API ---
+streamlit
+openai  # optional, in case you switch back to OpenAI API
+tqdm
+
+# --- Environment & Config ---
+python-dotenv
+
+# --- Optional extras for notebooks ---
+jupyter
+notebook
