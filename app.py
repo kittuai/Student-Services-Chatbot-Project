@@ -1,15 +1,15 @@
 import os
 import re
-import pickle
+import joblib
 import requests
 import streamlit as st
 import pandas as pd
 from sklearn.metrics.pairwise import cosine_similarity
 
 # ========================
-# CONFIG (hard-coded key)
+# CONFIG (hard-coded key — replace for security in production)
 # ========================
-API_KEY = "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"
+API_KEY = "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"
 MODEL = "meta-llama/llama-3-70b-instruct"
 API_URL = "https://openrouter.ai/api/v1/chat/completions"
 SCHEDULING_LINK = "https://studentsuccess.conestogac.on.ca/meet"
@@ -29,14 +29,10 @@ base = os.path.dirname(os.path.abspath(__file__))
 
 @st.cache_resource(show_spinner=False)
 def load_assets():
-    with open(os.path.join(base, "model", "intent_classifier.pkl"), "rb") as f:
-        intent_model = pickle.load(f)
-    with open(os.path.join(base, "model", "intent_vectorizer.pkl"), "rb") as f:
-        intent_vectorizer = pickle.load(f)
-    with open(os.path.join(base, "artifacts", "tfidf_vectorizer.pkl"), "rb") as f:
-        tfidf_vectorizer = pickle.load(f)
-    with open(os.path.join(base, "artifacts", "tfidf_matrix.pkl"), "rb") as f:
-        tfidf_matrix = pickle.load(f)
+    intent_model = joblib.load(os.path.join(base, "model", "intent_classifier.pkl"))
+    intent_vectorizer = joblib.load(os.path.join(base, "model", "intent_vectorizer.pkl"))
+    tfidf_vectorizer = joblib.load(os.path.join(base, "artifacts", "tfidf_vectorizer.pkl"))
+    tfidf_matrix = joblib.load(os.path.join(base, "artifacts", "tfidf_matrix.pkl"))
     df = pd.read_csv(os.path.join(base, "data", "faqs_relabelled.csv"))
     return intent_model, intent_vectorizer, tfidf_vectorizer, tfidf_matrix, df
 
@@ -60,7 +56,6 @@ def _post_openrouter(messages, temperature=0.1, max_tokens=220):
         return "Service unavailable. Try again later."
 
 def clean_branding(text: str) -> str:
-    """Remove/replace the word 'conestoga' everywhere."""
     return re.sub(r"\bconestoga\b", "the college", text, flags=re.IGNORECASE)
 
 def detect_intent(text: str) -> str:
@@ -68,7 +63,6 @@ def detect_intent(text: str) -> str:
     return intent_model.predict(v)[0]
 
 def match_faq_tfidf(text: str, top_n: int = TOP_N_FAQ):
-    """Rank FAQs via TF-IDF, skip any row that mentions 'conestoga'."""
     qv = tfidf_vectorizer.transform([text])
     scores = cosine_similarity(qv, tfidf_matrix).flatten()
     idx = scores.argsort()[::-1]
@@ -86,11 +80,7 @@ def match_faq_tfidf(text: str, top_n: int = TOP_N_FAQ):
     return out
 
 def detect_emotion(text: str) -> str:
-    """Return: positive | negative | neutral."""
-    prompt = (
-        "Detect emotion. Reply with one word: positive, negative, or neutral.\n"
-        f"Text: {text}"
-    )
+    prompt = f"Detect emotion. Reply with one word: positive, negative, or neutral.\nText: {text}"
     label = _post_openrouter(
         [
             {"role": "system", "content": "Return only one word: positive, negative, or neutral."},
@@ -111,7 +101,6 @@ def call_llm(query: str) -> str:
     return clean_branding(raw)
 
 def _recent_empathy_banlist(n: int = 3):
-    """Collect last n empathy messages to reduce repetition."""
     if "messages" not in st.session_state:
         return []
     bans = []
@@ -123,10 +112,6 @@ def _recent_empathy_banlist(n: int = 3):
     return bans
 
 def call_llm_empathy(user_text: str, intent_hint: str = "general") -> str:
-    """
-    Produce a short, empathetic response (1–3 sentences) using the LLM.
-    Varies wording by banning recent empathy phrases; lightly tailors to detected intent.
-    """
     banned = _recent_empathy_banlist(3)
     banned_join = " | ".join(banned) if banned else ""
     messages = [
@@ -157,10 +142,6 @@ def call_llm_empathy(user_text: str, intent_hint: str = "general") -> str:
     return clean_branding(raw)
 
 def is_college_related_llm(text: str) -> bool:
-    """
-    Use LLM to classify if the query is college-related.
-    Returns True only if the model replies exactly 'college'.
-    """
     prompt = (
         "Classify the user's query. Reply with exactly one word:\n"
         "- 'college' if it is about higher education topics such as fees, tuition, courses, programs, registration, "
@@ -179,19 +160,12 @@ def is_college_related_llm(text: str) -> bool:
         ).strip().lower()
         return label == "college"
     except Exception:
-        return False  # safe default
+        return False
 
 # ========================
-# OFF-RAMP (centralized)
+# OFF-RAMP
 # ========================
 def decide_response(user_text):
-    """
-    Decide route: 'tf-idf' | 'llm' | 'llm-empathy'.
-    - If emotion is negative → empathetic LLM reply (we'll ALSO add an LLM answer in the UI layer).
-    - Else if no strong TF-IDF match and intent is general → LLM.
-    - Else if no matches → LLM.
-    - Else TF-IDF.
-    """
     emotion = detect_emotion(user_text)
     intent = detect_intent(user_text)
     faqs = match_faq_tfidf(user_text, TOP_N_FAQ)
@@ -201,45 +175,39 @@ def decide_response(user_text):
     decision = {
         "path": None,
         "answer": "",
-        "faqs": faqs,          # keep faqs even for negative, so we can show Top-5 on the second message
+        "faqs": faqs,
         "emotion": emotion,
         "intent": intent
     }
 
-    # Negative emotion → empathetic LLM (UI will add the second LLM answer + table)
     if emotion == "negative":
         decision["path"] = "llm-empathy"
         decision["answer"] = call_llm_empathy(user_text, intent_hint=intent)
         return decision
 
-    # LLM if weak match and general intent
     if not has_strong_match and intent.lower() == "general":
         decision["path"] = "llm"
         decision["answer"] = call_llm(user_text)
         return decision
 
-    # LLM fallback if no matches
     if not faqs:
         decision["path"] = "llm"
         decision["answer"] = call_llm(user_text)
         return decision
 
-    # Default: TF-IDF best answer
     decision["path"] = "tf-idf"
     decision["answer"] = faqs[0]["a"]
     return decision
 
 # ========================
-# UI (minimal, fixed title position)
+# UI
 # ========================
 st.set_page_config(page_title="SSA Chat", layout="centered")
-
-# Add CSS to push content down and center title
 st.markdown("""
 <style>
 .block-container {
     max-width: 760px;
-    padding-top: 40px;  /* Pushes content down so title is visible */
+    padding-top: 40px;
 }
 .stChatMessage { padding: 4px 0; }
 .stChatMessage .stMarkdown { font-size: 0.92rem; line-height: 1.35; }
@@ -247,7 +215,6 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# Centered title and subtitle
 st.markdown(
     """
     <h1 style='text-align: center; margin-bottom: 0;'>Student Service Assistant</h1>
@@ -258,7 +225,6 @@ st.markdown(
     unsafe_allow_html=True
 )
 
-# Initialize history once with greeting
 if "messages" not in st.session_state:
     st.session_state.messages = [
         {
@@ -271,34 +237,26 @@ if "messages" not in st.session_state:
         }
     ]
 
-# Render history
 for m in st.session_state.messages:
     with st.chat_message(m["role"]):
         st.markdown(m["content"])
         meta = m.get("meta", {})
         if m["role"] == "assistant" and meta:
-            # Show only emotion, intent, source
             st.markdown(
                 f"<div class='meta'>emotion: {meta.get('emotion','-')} · intent: {meta.get('intent','-')} · source: {meta.get('source','-')}</div>",
                 unsafe_allow_html=True
             )
-        # Show Top-5 only if LLM says user's query is college-related
         if m.get("faqs") and m.get("college_related", False):
             st.markdown("**Top 5 similar questions:**")
             df_view = pd.DataFrame(m["faqs"][:TOP_N_FAQ]).rename(columns={"q": "Question", "score": "Score"})
             df_view["Score"] = df_view["Score"].map(lambda x: f"{x:.2f}")
             st.dataframe(df_view[["Question", "Score"]], use_container_width=True, hide_index=True)
 
-# Chat input
 user_text = st.chat_input("Type your question")
 if user_text:
-    # Central decision
     decision = decide_response(user_text)
-
-    # LLM classification for showing Top-5 table (college-related vs other)
     college_related = is_college_related_llm(user_text)
 
-    # Append user message
     st.session_state.messages.append({
         "role": "user",
         "content": user_text,
@@ -308,9 +266,7 @@ if user_text:
         "college_related": False
     })
 
-    # If negative: 1) empathy (llm-empathy), 2) LLM answer with table
     if decision["emotion"] == "negative":
-        # 1) Empathy message (meta shown here)
         st.session_state.messages.append({
             "role": "assistant",
             "content": decision["answer"],
@@ -324,20 +280,18 @@ if user_text:
             "college_related": False
         })
 
-        # 2) Actual concise LLM answer (no meta → cleaner look, table shown here)
         llm_answer = call_llm(user_text)
         faqs_view = [{"q": f["q"], "score": f["score"]} for f in decision["faqs"]]
         st.session_state.messages.append({
             "role": "assistant",
             "content": llm_answer,
-            "meta": {},  # empty to avoid duplicate meta line
+            "meta": {},
             "faqs": faqs_view,
             "query": user_text,
             "college_related": college_related
         })
         st.rerun()
 
-    # Non-negative (original single response behavior)
     meta = {
         "emotion": decision["emotion"],
         "intent": decision["intent"],
@@ -355,4 +309,3 @@ if user_text:
     })
 
     st.rerun()
-    
