@@ -1,0 +1,1274 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Technical report for the Student Services Assistant (SSA) Chatbot - an emotion-aware, evidence-grounded help system">
+    <meta property="og:title" content="SSA Chatbot Technical Report">
+    <meta property="og:description" content="Multi-layered assistant combining emotion detection, TF-IDF retrieval, LLM fallback, and advisor escalation">
+    <meta property="og:type" content="website">
+    <title>SSA Chatbot Technical Report</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/alpinejs@3.12.0/dist/cdn.min.js" defer></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.11.4/gsap.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.11.4/ScrollTrigger.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+    <style>
+        @media print {
+            .no-print {
+                display: none !important;
+            }
+            body {
+                padding: 0 !important;
+                margin: 0 !important;
+                font-size: 12pt !important;
+                line-height: 1.3 !important;
+            }
+            section {
+                page-break-inside: avoid !important;
+                margin-bottom: 1.5cm !important;
+            }
+            .print-break-before {
+                page-break-before: always !important;
+            }
+        }
+        .gradient-bg {
+            background: linear-gradient(135deg, #F0F7FF 0%, #FFFFFF 100%);
+        }
+        .section-title {
+            position: relative;
+            display: inline-block;
+        }
+        .section-title:after {
+            content: '';
+            position: absolute;
+            bottom: -8px;
+            left: 0;
+            width: 100%;
+            height: 3px;
+            background: linear-gradient(90deg, #1F6FEB 0%, #0EA5E9 100%);
+            border-radius: 3px;
+        }
+        [x-cloak] { display: none !important; }
+        .mermaid {
+            background: white;
+            border-radius: 1rem;
+            padding: 1.5rem;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+        }
+        .debug-panel {
+            transition: all 0.3s ease;
+        }
+        .response-anatomy {
+            border-left: 4px solid #1F6FEB;
+            padding-left: 1rem;
+        }
+        .chip {
+            display: inline-flex;
+            align-items: center;
+            padding: 0.25rem 0.75rem;
+            border-radius: 9999px;
+            font-size: 0.875rem;
+            font-weight: 500;
+        }
+        .active-nav {
+            position: relative;
+            color: #1F6FEB;
+        }
+        .active-nav:after {
+            content: '';
+            position: absolute;
+            bottom: -2px;
+            left: 0;
+            width: 100%;
+            height: 2px;
+            background-color: #1F6FEB;
+        }
+        .step-card {
+            counter-increment: step-counter;
+            position: relative;
+            padding-left: 3.5rem;
+        }
+        .step-card:before {
+            content: counter(step-counter);
+            position: absolute;
+            left: 0;
+            top: 0;
+            width: 2.5rem;
+            height: 2.5rem;
+            background-color: #1F6FEB;
+            color: white;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+        }
+        .step-card:not(:last-child):after {
+            content: '';
+            position: absolute;
+            left: 1.25rem;
+            top: 2.5rem;
+            bottom: -1.5rem;
+            width: 2px;
+            background-color: #E5E7EB;
+        }
+    </style>
+</head>
+<body class="bg-[#F7F8FA] text-[#0B1220] font-sans antialiased leading-relaxed">
+    <!-- Skip to content link -->
+    <a href="#main-content" class="sr-only focus:not-sr-only focus:absolute focus:top-4 focus:left-4 focus:px-4 focus:py-2 focus:bg-white focus:rounded-md focus:shadow-md focus:z-50">Skip to content</a>
+
+    <!-- Sticky Header -->
+    <header class="sticky top-0 z-50 bg-white/90 backdrop-blur-sm shadow-sm no-print">
+        <div class="container mx-auto px-6 py-4 flex justify-between items-center">
+            <div class="text-xl font-bold text-[#1F6FEB]">SSA Chatbot</div>
+            <nav class="hidden md:flex space-x-8">
+                <a href="#about" class="nav-link hover:text-[#1F6FEB] transition">About</a>
+                <a href="#architecture" class="nav-link hover:text-[#1F6FEB] transition">Architecture</a>
+                <a href="#pipeline" class="nav-link hover:text-[#1F6FEB] transition">Pipeline</a>
+                <a href="#models" class="nav-link hover:text-[#1F6FEB] transition">Models</a>
+                <a href="#evaluation" class="nav-link hover:text-[#1F6FEB] transition">Evaluation</a>
+                <a href="#ux" class="nav-link hover:text-[#1F6FEB] transition">UX & Empathy</a>
+                <a href="#debug" class="nav-link hover:text-[#1F6FEB] transition">Debug</a>
+                <a href="#deployment" class="nav-link hover:text-[#1F6FEB] transition">Deployment</a>
+                <a href="#appendix" class="nav-link hover:text-[#1F6FEB] transition">Appendix</a>
+            </nav>
+            <button class="md:hidden" @click="mobileMenuOpen = !mobileMenuOpen">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" />
+                </svg>
+            </button>
+        </div>
+        <!-- Mobile menu -->
+        <div x-cloak x-show="mobileMenuOpen" @click.away="mobileMenuOpen = false" class="md:hidden bg-white shadow-lg">
+            <div class="container mx-auto px-6 py-4 flex flex-col space-y-4">
+                <a href="#about" class="nav-link hover:text-[#1F6FEB] transition">About</a>
+                <a href="#architecture" class="nav-link hover:text-[#1F6FEB] transition">Architecture</a>
+                <a href="#pipeline" class="nav-link hover:text-[#1F6FEB] transition">Pipeline</a>
+                <a href="#models" class="nav-link hover:text-[#1F6FEB] transition">Models</a>
+                <a href="#evaluation" class="nav-link hover:text-[#1F6FEB] transition">Evaluation</a>
+                <a href="#ux" class="nav-link hover:text-[#1F6FEB] transition">UX & Empathy</a>
+                <a href="#debug" class="nav-link hover:text-[#1F6FEB] transition">Debug</a>
+                <a href="#deployment" class="nav-link hover:text-[#1F6FEB] transition">Deployment</a>
+                <a href="#appendix" class="nav-link hover:text-[#1F6FEB] transition">Appendix</a>
+            </div>
+        </div>
+    </header>
+
+    <main id="main-content">
+        <!-- Hero Section -->
+        <section id="hero" class="gradient-bg py-20 md:py-32">
+            <div class="container mx-auto px-6 max-w-4xl">
+                <h1 class="text-4xl md:text-5xl font-bold text-center mb-6">
+                    Student Services Assistant (SSA) Chatbot
+                    <span class="block text-2xl md:text-3xl font-normal mt-4 text-[#5B6472]">
+                        Emotion-Aware, Evidence-Grounded Help
+                    </span>
+                </h1>
+                <p class="text-xl text-center text-[#5B6472] mb-10 max-w-3xl mx-auto">
+                    A multi-layered assistant combining emotion detection, TF-IDF retrieval, LLM fallback, and advisor escalation to deliver accurate, supportive answers.
+                </p>
+                <div class="flex flex-wrap justify-center gap-3 mb-12">
+                    <span class="chip bg-blue-100 text-blue-800">Python 3.10</span>
+                    <span class="chip bg-green-100 text-green-800">scikit-learn</span>
+                    <span class="chip bg-purple-100 text-purple-800">OpenRouter API</span>
+                    <span class="chip bg-yellow-100 text-yellow-800">Streamlit UI</span>
+                    <span class="chip bg-gray-100 text-gray-800">v1.2.0</span>
+                    <span class="chip bg-indigo-100 text-indigo-800">Last Updated: <span id="current-date"></span></span>
+                    <span class="chip bg-pink-100 text-pink-800">Contact: ssa-team@example.edu</span>
+                </div>
+                <div class="text-center">
+                    <a href="#about" class="inline-flex items-center px-6 py-3 bg-[#1F6FEB] text-white rounded-full font-medium hover:bg-[#1A5FD0] transition shadow-md hover:shadow-lg">
+                        Explore Report
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 ml-2" viewBox="0 0 20 20" fill="currentColor">
+                            <path fill-rule="evenodd" d="M16.707 10.293a1 1 0 010 1.414l-6 6a1 1 0 01-1.414 0l-6-6a1 1 0 111.414-1.414L9 14.586V3a1 1 0 012 0v11.586l4.293-4.293a1 1 0 011.414 0z" clip-rule="evenodd" />
+                        </svg>
+                    </a>
+                </div>
+            </div>
+        </section>
+
+        <!-- About Section -->
+        <section id="about" class="py-20 scroll-mt-20">
+            <div class="container mx-auto px-6 max-w-4xl">
+                <h2 class="text-3xl font-bold mb-8 section-title">Executive Summary</h2>
+                <div class="bg-white rounded-2xl shadow-md p-8 mb-12">
+                    <h3 class="text-xl font-semibold mb-4 text-[#1F6FEB]">Problem Statement</h3>
+                    <p class="mb-6 text-[#5B6472]">
+                        Student services departments face increasing demand for accurate, timely information across financial aid, academic policies, and campus resources. Current systems suffer from:
+                    </p>
+                    <ul class="list-disc pl-6 mb-6 space-y-2 text-[#5B6472]">
+                        <li>Fragmented information across multiple platforms (websites, PDFs, staff knowledge)</li>
+                        <li>Long wait times during peak periods (registration, financial aid deadlines)</li>
+                        <li>Inconsistent response quality and lack of emotional support for stressed students</li>
+                        <li>High advisor workload on repetitive questions that could be automated</li>
+                    </ul>
+                    
+                    <h3 class="text-xl font-semibold mb-4 text-[#1F6FEB]">Solution Overview</h3>
+                    <p class="text-[#5B6472]">
+                        The SSA Chatbot implements a multi-stage pipeline that combines traditional information retrieval with modern LLM capabilities, wrapped in an emotion-aware interface:
+                    </p>
+                    <ol class="list-decimal pl-6 mt-4 space-y-2 text-[#5B6472]">
+                        <li><strong>Emotion Detection:</strong> Analyzes sentiment and stress markers to tailor responses</li>
+                        <li><strong>TF-IDF Retrieval:</strong> Fast, accurate answers from curated FAQ database</li>
+                        <li><strong>LLM Fallback:</strong> LLaMA 3 via OpenRouter for complex or novel queries</li>
+                        <li><strong>Advisor Escalation:</strong> Smooth handoff when human intervention is needed</li>
+                    </ol>
+                </div>
+            </div>
+        </section>
+
+        <!-- Architecture Section -->
+        <section id="architecture" class="py-20 scroll-mt-20 bg-white">
+            <div class="container mx-auto px-6 max-w-6xl">
+                <h2 class="text-3xl font-bold mb-12 section-title">System Architecture</h2>
+                
+                <div class="mb-16">
+                    <h3 class="text-xl font-semibold mb-6 text-[#1F6FEB]">Processing Pipeline</h3>
+                    <div class="mermaid">
+                        graph LR
+                            A[User Input] --> B[Preprocessing]
+                            B --> C[Emotion Detector]
+                            C --> D[Intent Classifier]
+                            D --> E{Emotion Negative?}
+                            E -->|Yes| F[Add Empathetic Preamble]
+                            E -->|No| G[TF-IDF Retriever]
+                            F --> G
+                            G --> H{TF-IDF Score ≥ {{THRESHOLD}}?}
+                            H -->|Yes| I[Answer from FAQ]
+                            H -->|No| J[RAG Enabled?]
+                            J -->|Yes| K[RAG Augmentation]
+                            J -->|No| L[LLM Fallback]
+                            K --> M[Response Selector]
+                            L --> M
+                            M --> N{Confidence ≥ {{CONFIDENCE_MIN}}?}
+                            N -->|Yes| O[UI Presenter]
+                            N -->|No| P[Advisor Escalation]
+                            O --> Q[User]
+                            P --> Q
+                            
+                            subgraph Data Stores
+                                R[faqs.csv]
+                                S[tfidf_vectorizer.pkl]
+                                T[tfidf_matrix.pkl]
+                                U[intent_classifier.pkl]
+                                V[intent_vectorizer.pkl]
+                                W[conversation_history.json]
+                            end
+                            
+                            G --> R
+                            G --> S
+                            G --> T
+                            D --> U
+                            D --> V
+                            O --> W
+                    </div>
+                </div>
+                
+                <div class="mt-16">
+                    <h3 class="text-xl font-semibold mb-6 text-[#1F6FEB]">Deployment Architecture</h3>
+                    <div class="mermaid">
+                        graph TB
+                            subgraph Client
+                                A[Browser UI]
+                                B[Streamlit App]
+                            end
+                            
+                            subgraph Backend
+                                C[FastAPI Server]
+                                D[Model Artifacts]
+                                E[Session Store]
+                            end
+                            
+                            subgraph External Services
+                                F[OpenRouter API]
+                                G[Monitoring]
+                            end
+                            
+                            A -->|HTTP| C
+                            B -->|HTTP| C
+                            C --> D
+                            C --> F
+                            C --> E
+                            C -->|Metrics| G
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Pipeline Section -->
+        <section id="pipeline" class="py-20 scroll-mt-20">
+            <div class="container mx-auto px-6 max-w-4xl">
+                <h2 class="text-3xl font-bold mb-12 section-title">End-to-End Pipeline</h2>
+                
+                <div class="space-y-8">
+                    <div class="step-card bg-white rounded-2xl shadow-md p-8">
+                        <h3 class="text-xl font-semibold mb-4">1. Ingestion</h3>
+                        <p class="text-[#5B6472]">
+                            Receive user query through web interface or API. Capture metadata:
+                        </p>
+                        <ul class="list-disc pl-6 mt-2 text-[#5B6472]">
+                            <li>Session ID for continuity</li>
+                            <li>Device/browser information</li>
+                            <li>Previous interaction history (if available)</li>
+                        </ul>
+                    </div>
+                    
+                    <div class="step-card bg-white rounded-2xl shadow-md p-8">
+                        <h3 class="text-xl font-semibold mb-4">2. Preprocessing</h3>
+                        <p class="text-[#5B6472]">
+                            Standard NLP cleaning pipeline applied to all inputs:
+                        </p>
+                        <div class="mt-4 bg-gray-50 p-4 rounded-lg">
+                            <code class="text-sm">
+                                # Sample preprocessing steps<br>
+                                1. Lowercase conversion<br>
+                                2. Remove special characters (keep ?! for emotion detection)<br>
+                                3. Expand contractions (can't → cannot)<br>
+                                4. Lemmatization (using WordNet)<br>
+                                5. Remove stopwords (custom list for academic context)<br>
+                                6. Spelling correction (SymSpell)<br>
+                                7. Emotion markers detection (❗, 😢, etc.)
+                            </code>
+                        </div>
+                    </div>
+                    
+                    <div class="step-card bg-white rounded-2xl shadow-md p-8">
+                        <h3 class="text-xl font-semibold mb-4">3. Vectorization</h3>
+                        <p class="text-[#5B6472]">
+                            Convert cleaned text to numerical representations:
+                        </p>
+                        <ul class="list-disc pl-6 mt-2 text-[#5B6472]">
+                            <li><strong>TF-IDF:</strong> Pre-trained vectorizer (max_features=5000)</li>
+                            <li><strong>Intent Classification:</strong> Separate vectorizer for intent detection</li>
+                            <li><strong>Emotion:</strong> Custom lexicon-based scoring (range -1 to +1)</li>
+                        </ul>
+                    </div>
+                    
+                    <div class="step-card bg-white rounded-2xl shadow-md p-8">
+                        <h3 class="text-xl font-semibold mb-4">4. Retrieval</h3>
+                        <p class="text-[#5B6472]">
+                            Search FAQ database using cosine similarity against TF-IDF vectors:
+                        </p>
+                        <div class="mt-4 bg-gray-50 p-4 rounded-lg">
+                            <code class="text-sm">
+                                # Retrieval parameters<br>
+                                TOP_K = 5  # Number of candidates to consider<br>
+                                MIN_SIMILARITY = 0.65  # Threshold for direct answer<br>
+                                <br>
+                                # Fallback conditions<br>
+                                if max(similarity_scores) < MIN_SIMILARITY:<br>
+                                &nbsp;&nbsp;trigger_fallback()
+                            </code>
+                        </div>
+                    </div>
+                    
+                    <div class="step-card bg-white rounded-2xl shadow-md p-8">
+                        <h3 class="text-xl font-semibold mb-4">5. RAG Augmentation (Optional)</h3>
+                        <p class="text-[#5B6472]">
+                            When enabled, enhances retrieval with document chunks from policy manuals:
+                        </p>
+                        <ul class="list-disc pl-6 mt-2 text-[#5B6472]">
+                            <li>Chunk size: 512 tokens</li>
+                            <li>Overlap: 128 tokens</li>
+                            <li>Embeddings: all-MiniLM-L6-v2</li>
+                            <li>Hybrid scoring: 0.7 * TF-IDF + 0.3 * semantic similarity</li>
+                        </ul>
+                    </div>
+                    
+                    <div class="step-card bg-white rounded-2xl shadow-md p-8">
+                        <h3 class="text-xl font-semibold mb-4">6. LLM Fallback</h3>
+                        <p class="text-[#5B6472]">
+                            For queries failing retrieval thresholds, use LLaMA 3 with strict prompting:
+                        </p>
+                        <div class="mt-4 bg-gray-50 p-4 rounded-lg">
+                            <code class="text-sm">
+                                SYSTEM_PROMPT = '''You are a helpful student services assistant.<br>
+                                - Be concise (1-2 sentences)<br>
+                                - Only answer about university policies<br>
+                                - If unsure, say "I'll connect you with an advisor"<br>
+                                - Current academic year: {{ACADEMIC_YEAR}}'''
+                            </code>
+                        </div>
+                    </div>
+                    
+                    <div class="step-card bg-white rounded-2xl shadow-md p-8">
+                        <h3 class="text-xl font-semibold mb-4">7. Post-processing</h3>
+                        <p class="text-[#5B6472]">
+                            Final response enhancements:
+                        </p>
+                        <ul class="list-disc pl-6 mt-2 text-[#5B6472]">
+                            <li>Add source citations (FAQ ID or document page)</li>
+                            <li>Apply empathy wrapper if emotion score < -0.3</li>
+                            <li>Inject follow-up questions to guide conversation</li>
+                            <li>Format for readability (bullets, line breaks)</li>
+                        </ul>
+                    </div>
+                    
+                    <div class="step-card bg-white rounded-2xl shadow-md p-8">
+                        <h3 class="text-xl font-semibold mb-4">8. Response Delivery</h3>
+                        <p class="text-[#5B6472]">
+                            Present through UI with typing indicators and optional:
+                        </p>
+                        <ul class="list-disc pl-6 mt-2 text-[#5B6472]">
+                            <li>Confidence indicator (visual meter)</li>
+                            <li>"Was this helpful?" feedback buttons</li>
+                            <li>Escalation button (direct to advisor)</li>
+                        </ul>
+                    </div>
+                    
+                    <div class="step-card bg-white rounded-2xl shadow-md p-8">
+                        <h3 class="text-xl font-semibold mb-4">9. Logging & Telemetry</h3>
+                        <p class="text-[#5B6472]">
+                            Full conversation history stored with:
+                        </p>
+                        <ul class="list-disc pl-6 mt-2 text-[#5B6472]">
+                            <li>Timestamps and session metadata</li>
+                            <li>Decision path (retrieval/LLM/escalation)</li>
+                            <li>Confidence scores and emotion values</li>
+                            <li>User feedback (if provided)</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Models Section -->
+        <section id="models" class="py-20 scroll-mt-20 bg-white">
+            <div class="container mx-auto px-6 max-w-6xl">
+                <h2 class="text-3xl font-bold mb-12 section-title">Models & Artifacts</h2>
+                
+                <div class="overflow-x-auto mb-12">
+                    <table class="min-w-full divide-y divide-gray-200">
+                        <thead class="bg-gray-50">
+                            <tr>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Component</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Artifact/Model</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Purpose</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Location/Path</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Notes</th>
+                            </tr>
+                        </thead>
+                        <tbody class="bg-white divide-y divide-gray-200">
+                            <tr>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">FAQ Store</td>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">faqs.csv</td>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">Canonical Q&A pairs</td>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">data/faqs.csv</td>
+                                <td class="px-6 py-4 text-sm text-gray-500">500+ entries, updated monthly</td>
+                            </tr>
+                            <tr>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">Vectorizer</td>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">tfidf_vectorizer.pkl</td>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">Text → TF-IDF vectors</td>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">artifacts/tfidf_vectorizer.pkl</td>
+                                <td class="px-6 py-4 text-sm text-gray-500">max_features=5000</td>
+                            </tr>
+                            <tr>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">TF-IDF Matrix</td>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">tfidf_matrix.pkl</td>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">Pre-computed document vectors</td>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">artifacts/tfidf_matrix.pkl</td>
+                                <td class="px-6 py-4 text-sm text-gray-500">Sparse matrix format</td>
+                            </tr>
+                            <tr>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">Intent Classifier</td>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">intent_classifier.pkl</td>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">Question categorization</td>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">model/intent_classifier.pkl</td>
+                                <td class="px-6 py-4 text-sm text-gray-500">LogisticRegression</td>
+                            </tr>
+                            <tr>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">Intent Vectorizer</td>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">intent_vectorizer.pkl</td>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">Text → intent features</td>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">model/intent_vectorizer.pkl</td>
+                                <td class="px-6 py-4 text-sm text-gray-500">CountVectorizer</td>
+                            </tr>
+                            <tr>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">LLM</td>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">meta-llama/llama-3-70b-instruct</td>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">Fallback generation</td>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">api.openrouter.ai</td>
+                                <td class="px-6 py-4 text-sm text-gray-500">API key required</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                
+                <div class="bg-gray-50 p-6 rounded-xl">
+                    <h3 class="text-lg font-semibold mb-4">Artifact Loading Pattern</h3>
+                    <div class="bg-gray-800 rounded-lg p-4 overflow-x-auto">
+                        <pre class="text-sm text-gray-200"><code>import pickle
+from pathlib import Path
+from typing import Any
+
+def load_artifact(file_path: str) -> Any:
+    """Safely load serialized artifacts with error handling."""
+    try:
+        with open(Path(file_path), 'rb') as f:
+            return pickle.load(f)
+    except FileNotFoundError:
+        print(f"Error: Artifact not found at {file_path}")
+        raise
+    except Exception as e:
+        print(f"Error loading artifact: {str(e)}")
+        raise
+
+# Example usage
+try:
+    vectorizer = load_artifact("artifacts/tfidf_vectorizer.pkl")
+    tfidf_matrix = load_artifact("artifacts/tfidf_matrix.pkl")
+except:
+    # Fallback to empty structures
+    vectorizer = None
+    tfidf_matrix = None</code></pre>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Evaluation Section -->
+        <section id="evaluation" class="py-20 scroll-mt-20">
+            <div class="container mx-auto px-6 max-w-6xl">
+                <h2 class="text-3xl font-bold mb-12 section-title">Evaluation & Metrics</h2>
+                
+                <div class="grid md:grid-cols-2 gap-8 mb-12">
+                    <div class="bg-white rounded-2xl shadow-md p-6">
+                        <h3 class="text-xl font-semibold mb-4">Retrieval Performance</h3>
+                        <canvas id="retrievalChart" height="300"></canvas>
+                    </div>
+                    <div class="bg-white rounded-2xl shadow-md p-6">
+                        <h3 class="text-xl font-semibold mb-4">Response Sources</h3>
+                        <canvas id="sourceChart" height="300"></canvas>
+                    </div>
+                </div>
+                
+                <div class="bg-white rounded-2xl shadow-md p-6 mb-12">
+                    <h3 class="text-xl font-semibold mb-4">Resolution Time Comparison</h3>
+                    <canvas id="timeChart" height="300"></canvas>
+                </div>
+                
+                <div class="grid md:grid-cols-4 gap-6 mb-12">
+                    <div class="bg-white rounded-2xl shadow-md p-6 text-center">
+                        <div class="text-3xl font-bold text-[#1F6FEB] mb-2">87%</div>
+                        <div class="text-sm text-[#5B6472]">First Response Accuracy</div>
+                    </div>
+                    <div class="bg-white rounded-2xl shadow-md p-6 text-center">
+                        <div class="text-3xl font-bold text-[#1F6FEB] mb-2">62%</div>
+                        <div class="text-sm text-[#5B6472]">Deflection Rate</div>
+                    </div>
+                    <div class="bg-white rounded-2xl shadow-md p-6 text-center">
+                        <div class="text-3xl font-bold text-[#1F6FEB] mb-2">8.2s</div>
+                        <div class="text-sm text-[#5B6472]">Avg Time-to-Answer</div>
+                    </div>
+                    <div class="bg-white rounded-2xl shadow-md p-6 text-center">
+                        <div class="text-3xl font-bold text-[#1F6FEB] mb-2">11%</div>
+                        <div class="text-sm text-[#5B6472]">Escalation Rate</div>
+                    </div>
+                </div>
+                
+                <div class="bg-white rounded-2xl shadow-md p-8">
+                    <h3 class="text-xl font-semibold mb-4">Inter-Annotator Agreement</h3>
+                    <p class="text-[#5B6472] mb-4">
+                        For evaluation, three domain experts labeled 200 random responses on:
+                    </p>
+                    <ul class="list-disc pl-6 mb-6 text-[#5B6472]">
+                        <li>Accuracy (0-3 scale)</li>
+                        <li>Empathy (0-2 scale)</li>
+                        <li>Appropriateness for escalation (binary)</li>
+                    </ul>
+                    <div class="bg-gray-50 p-4 rounded-lg">
+                        <code class="text-sm">
+                            Cohen's κ = 0.72 (Substantial agreement)<br>
+                            Fleiss' κ = 0.68 (Substantial agreement)<br>
+                            <br>
+                            Disagreements primarily on empathy scoring (κ=0.61)<br>
+                            Highest agreement on escalation decisions (κ=0.85)
+                        </code>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- UX & Empathy Section -->
+        <section id="ux" class="py-20 scroll-mt-20 bg-white">
+            <div class="container mx-auto px-6 max-w-4xl">
+                <h2 class="text-3xl font-bold mb-12 section-title">UX & Empathy System</h2>
+                
+                <div class="mb-12">
+                    <h3 class="text-xl font-semibold mb-6 text-[#1F6FEB]">Empathy Templates</h3>
+                    <div class="grid md:grid-cols-2 gap-6">
+                        <div class="bg-blue-50 rounded-xl p-6">
+                            <h4 class="font-medium mb-2">Financial Stress</h4>
+                            <p class="text-[#5B6472] italic">
+                                "I understand financial aid questions can be stressful. Let me help clarify..."
+                            </p>
+                        </div>
+                        <div class="bg-blue-50 rounded-xl p-6">
+                            <h4 class="font-medium mb-2">Academic Pressure</h4>
+                            <p class="text-[#5B6472] italic">
+                                "Deadlines can feel overwhelming. Here's what you need to know about..."
+                            </p>
+                        </div>
+                        <div class="bg-blue-50 rounded-xl p-6">
+                            <h4 class="font-medium mb-2">Housing Concerns</h4>
+                            <p class="text-[#5B6472] italic">
+                                "Finding housing is challenging. The current campus options are..."
+                            </p>
+                        </div>
+                        <div class="bg-blue-50 rounded-xl p-6">
+                            <h4 class="font-medium mb-2">General Frustration</h4>
+                            <p class="text-[#5B6472] italic">
+                                "I hear your frustration. Let's work through this together..."
+                            </p>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="mb-12">
+                    <h3 class="text-xl font-semibold mb-6 text-[#1F6FEB]">Response Examples</h3>
+                    
+                    <div class="mb-8">
+                        <h4 class="font-medium mb-2">Negative Emotion + TF-IDF Hit</h4>
+                        <div class="response-anatomy bg-gray-50 rounded-xl p-6">
+                            <div class="mb-4">
+                                <span class="text-xs font-semibold px-2 py-1 bg-blue-100 text-blue-800 rounded">User Query</span>
+                                <p class="mt-2 italic">"I'm freaking out about OSAP! The website says my documents are missing but I submitted everything!!"</p>
+                            </div>
+                            <div class="mb-2">
+                                <span class="text-xs font-semibold px-2 py-1 bg-green-100 text-green-800 rounded">Detected</span>
+                                <p class="mt-1 text-sm">Emotion: -0.82 (Negative) | Intent: financial_aid | Top TF-IDF Score: 0.78</p>
+                            </div>
+                            <div>
+                                <span class="text-xs font-semibold px-2 py-1 bg-purple-100 text-purple-800 rounded">Response</span>
+                                <div class="mt-2 space-y-2">
+                                    <p class="italic text-blue-600">"I know OSAP issues can be really stressful. Let me help clarify the document process."</p>
+                                    <p>• The financial aid office verifies documents within 5 business days (FAQ #142)</p>
+                                    <p>• You'll get an email when processed - no further action needed now</p>
+                                    <p class="text-sm text-gray-500 mt-2">[Source: OSAP Policy v3.2, Page 12]</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div>
+                        <h4 class="font-medium mb-2">Neutral Emotion + LLM Fallback</h4>
+                        <div class="response-anatomy bg-gray-50 rounded-xl p-6">
+                            <div class="mb-4">
+                                <span class="text-xs font-semibold px-2 py-1 bg-blue-100 text-blue-800 rounded">User Query</span>
+                                <p class="mt-2 italic">"Can I take MATH 301 and COMP 202 in the same semester?"</p>
+                            </div>
+                            <div class="mb-2">
+                                <span class="text-xs font-semibold px-2 py-1 bg-green-100 text-green-800 rounded">Detected</span>
+                                <p class="mt-1 text-sm">Emotion: 0.12 (Neutral) | Intent: course_planning | Top TF-IDF Score: 0.41</p>
+                            </div>
+                            <div>
+                                <span class="text-xs font-semibold px-2 py-1 bg-purple-100 text-purple-800 rounded">Response</span>
+                                <div class="mt-2 space-y-2">
+                                    <p>• MATH 301 has no prerequisites and can be taken with COMP 202</p>
+                                    <p>• Recommended for 2nd year CS majors (see Academic Calendar p.45)</p>
+                                    <p class="text-sm text-gray-500 mt-2">[Generated by LLM fallback | Confidence: 0.72]</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="bg-gray-50 rounded-xl p-6">
+                    <h3 class="text-xl font-semibold mb-4 text-[#1F6FEB]">Response Anatomy</h3>
+                    <div x-data="{ expanded: false }">
+                        <button @click="expanded = !expanded" class="flex items-center text-[#1F6FEB] font-medium mb-4">
+                            <span x-text="expanded ? 'Hide Details' : 'Show Details'"></span>
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 ml-1 transition-transform" :class="{ 'transform rotate-180': expanded }" viewBox="0 0 20 20" fill="currentColor">
+                                <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd" />
+                            </svg>
+                        </button>
+                        
+                        <div x-show="expanded" x-collapse class="space-y-6">
+                            <div class="flex items-start">
+                                <div class="flex-shrink-0 h-10 w-10 rounded-full bg-blue-100 flex items-center justify-center mr-4">
+                                    <span class="text-blue-800 font-bold">1</span>
+                                </div>
+                                <div>
+                                    <h4 class="font-medium mb-1">Empathy Wrapper</h4>
+                                    <p class="text-[#5B6472] text-sm">
+                                        Added when emotion score < -0.3. Uses template matching against:<br>
+                                        • Detected emotion intensity<br>
+                                        • Intent category<br>
+                                        • Specific keywords (OSAP, deadline, etc.)
+                                    </p>
+                                </div>
+                            </div>
+                            
+                            <div class="flex items-start">
+                                <div class="flex-shrink-0 h-10 w-10 rounded-full bg-green-100 flex items-center justify-center mr-4">
+                                    <span class="text-green-800 font-bold">2</span>
+                                </div>
+                                <div>
+                                    <h4 class="font-medium mb-1">Factual Core</h4>
+                                    <p class="text-[#5B6472] text-sm">
+                                        Concise information (1-3 bullet points) with:<br>
+                                        • Direct answers first<br>
+                                        • Supporting details after<br>
+                                        • Policy references when available
+                                    </p>
+                                </div>
+                            </div>
+                            
+                            <div class="flex items-start">
+                                <div class="flex-shrink-0 h-10 w-10 rounded-full bg-purple-100 flex items-center justify-center mr-4">
+                                    <span class="text-purple-800 font-bold">3</span>
+                                </div>
+                                <div>
+                                    <h4 class="font-medium mb-1">Source Tag</h4>
+                                    <p class="text-[#5B6472] text-sm">
+                                        Clear provenance indication:<br>
+                                        • FAQ ID for retrieved answers<br>
+                                        • Document/page for RAG<br>
+                                        • Confidence score for LLM fallback
+                                    </p>
+                                </div>
+                            </div>
+                            
+                            <div class="flex items-start">
+                                <div class="flex-shrink-0 h-10 w-10 rounded-full bg-yellow-100 flex items-center justify-center mr-4">
+                                    <span class="text-yellow-800 font-bold">4</span>
+                                </div>
+                                <div>
+                                    <h4 class="font-medium mb-1">Follow-up Prompt</h4>
+                                    <p class="text-[#5B6472] text-sm">
+                                        Optional engagement boosters:<br>
+                                        • "Would you like more details about..."<br>
+                                        • "Should I connect you with..."<br>
+                                        • "Was this information helpful?"
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Debug Section -->
+        <section id="debug" class="py-20 scroll-mt-20">
+            <div class="container mx-auto px-6 max-w-4xl">
+                <h2 class="text-3xl font-bold mb-12 section-title">Debug & Telemetry</h2>
+                
+                <div x-data="{ debugOpen: false }" class="mb-12">
+                    <button @click="debugOpen = !debugOpen" class="flex items-center px-6 py-3 bg-[#1F6FEB] text-white rounded-full font-medium hover:bg-[#1A5FD0] transition shadow-md hover:shadow-lg mb-6">
+                        <span x-text="debugOpen ? 'Hide Debug Panel' : 'Show Debug Panel'"></span>
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 ml-2 transition-transform" :class="{ 'transform rotate-180': debugOpen }" viewBox="0 0 20 20" fill="currentColor">
+                            <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd" />
+                        </svg>
+                    </button>
+                    
+                    <div x-show="debugOpen" x-collapse class="debug-panel bg-white rounded-2xl shadow-lg overflow-hidden">
+                        <div class="p-6 border-b border-gray-200 bg-gray-50">
+                            <h3 class="text-lg font-semibold">Query Analysis: "How do I appeal a grade?"</h3>
+                            <p class="text-sm text-gray-500">Session ID: sess_abc123 | Timestamp: 2023-11-15 14:22:05</p>
+                        </div>
+                        
+                        <div class="divide-y divide-gray-200">
+                            <div class="p-6">
+                                <h4 class="font-medium mb-3">Preprocessing Output</h4>
+                                <div class="grid md:grid-cols-2 gap-4 text-sm">
+                                    <div>
+                                        <p class="text-gray-500">Raw Input:</p>
+                                        <p>"how do I appeal a grade??"</p>
+                                    </div>
+                                    <div>
+                                        <p class="text-gray-500">Processed:</p>
+                                        <p>"appeal grade"</p>
+                                    </div>
+                                    <div>
+                                        <p class="text-gray-500">Emotion Score:</p>
+                                        <p>-0.45 (Negative)</p>
+                                    </div>
+                                    <div>
+                                        <p class="text-gray-500">Intent:</p>
+                                        <p>academic_appeals (confidence: 0.88)</p>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="p-6">
+                                <h4 class="font-medium mb-3">Top TF-IDF Matches</h4>
+                                <div class="overflow-x-auto">
+                                    <table class="min-w-full divide-y divide-gray-200">
+                                        <thead class="bg-gray-50">
+                                            <tr>
+                                                <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Rank</th>
+                                                <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Question</th>
+                                                <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Similarity</th>
+                                                <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">FAQ ID</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody class="bg-white divide-y divide-gray-200">
+                                            <tr>
+                                                <td class="px-4 py-2 whitespace-nowrap">1</td>
+                                                <td class="px-4 py-2">Grade appeal process</td>
+                                                <td class="px-4 py-2">0.83</td>
+                                                <td class="px-4 py-2">#217</td>
+                                            </tr>
+                                            <tr>
+                                                <td class="px-4 py-2 whitespace-nowrap">2</td>
+                                                <td class="px-4 py-2">Deadline for grade appeals</td>
+                                                <td class="px-4 py-2">0.72</td>
+                                                <td class="px-4 py-2">#218</td>
+                                            </tr>
+                                            <tr>
+                                                <td class="px-4 py-2 whitespace-nowrap">3</td>
+                                                <td class="px-4 py-2">Academic grievance procedure</td>
+                                                <td class="px-4 py-2">0.65</td>
+                                                <td class="px-4 py-2">#219</td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                            
+                            <div class="p-6">
+                                <h4 class="font-medium mb-3">Decision Path</h4>
+                                <div class="space-y-2 text-sm">
+                                    <div class="flex items-center">
+                                        <div class="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center mr-3">
+                                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-blue-600" viewBox="0 0 20 20" fill="currentColor">
+                                                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
+                                            </svg>
+                                        </div>
+                                        <span>Emotion detected → Empathy wrapper added</span>
+                                    </div>
+                                    <div class="flex items-center">
+                                        <div class="w-8 h-8 rounded-full bg-green-100 flex items-center justify-center mr-3">
+                                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-green-600" viewBox="0 0 20 20" fill="currentColor">
+                                                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
+                                            </svg>
+                                        </div>
+                                        <span>TF-IDF match (score=0.83 ≥ threshold=0.65) → FAQ answer selected</span>
+                                    </div>
+                                    <div class="flex items-center">
+                                        <div class="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center mr-3">
+                                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-gray-600" viewBox="0 0 20 20" fill="currentColor">
+                                                <path fill-rule="evenodd" d="M13.477 14.89A6 6 0 015.11 6.524l8.367 8.368zm1.414-1.414L6.524 5.11a6 6 0 018.367 8.367zM18 10a8 8 0 11-16 0 8 8 0 0116 0z" clip-rule="evenodd" />
+                                            </svg>
+                                        </div>
+                                        <span>LLM fallback not triggered</span>
+                                    </div>
+                                    <div class="flex items-center">
+                                        <div class="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center mr-3">
+                                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-gray-600" viewBox="0 0 20 20" fill="currentColor">
+                                                <path fill-rule="evenodd" d="M13.477 14.89A6 6 0 015.11 6.524l8.367 8.368zm1.414-1.414L6.524 5.11a6 6 0 018.367 8.367zM18 10a8 8 0 11-16 0 8 8 0 0116 0z" clip-rule="evenodd" />
+                                            </svg>
+                                        </div>
+                                        <span>Escalation not triggered (confidence=0.92 ≥ min=0.7)</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="bg-white rounded-2xl shadow-md p-8">
+                    <h3 class="text-xl font-semibold mb-4">Telemetry Schema</h3>
+                    <p class="text-[#5B6472] mb-6">
+                        All conversations are logged with the following structure for monitoring and continuous improvement:
+                    </p>
+                    <div class="bg-gray-50 p-4 rounded-lg overflow-x-auto">
+                        <pre class="text-sm"><code>{
+    "session_id": "sess_abc123",
+    "timestamp": "2023-11-15T14:22:05Z",
+    "user_input": "how do I appeal a grade??",
+    "processed_input": "appeal grade",
+    "emotion_score": -0.45,
+    "intent": {
+        "label": "academic_appeals",
+        "confidence": 0.88
+    },
+    "retrieval": {
+        "method": "tfidf",
+        "top_matches": [
+            {"faq_id": 217, "score": 0.83},
+            {"faq_id": 218, "score": 0.72}
+        ],
+        "threshold": 0.65
+    },
+    "response": {
+        "type": "faq",
+        "faq_id": 217,
+        "confidence": 0.92,
+        "sources": ["FAQ#217"],
+        "response_time_ms": 1240
+    },
+    "feedback": {
+        "provided": true,
+        "was_helpful": true,
+        "rating": 4
+    }
+}</code></pre>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Deployment Section -->
+        <section id="deployment" class="py-20 scroll-mt-20 bg-white">
+            <div class="container mx-auto px-6 max-w-6xl">
+                <h2 class="text-3xl font-bold mb-12 section-title">Deployment & Operations</h2>
+                
+                <div class="mb-12">
+                    <h3 class="text-xl font-semibold mb-6 text-[#1F6FEB]">Infrastructure Diagram</h3>
+                    <div class="mermaid">
+                        graph TD
+                            subgraph Client
+                                A[Browser UI]
+                                B[Streamlit App]
+                            end
+                            
+                            subgraph University Network
+                                C[FastAPI Server]
+                                D[Redis Cache]
+                                E[PostgreSQL]
+                                F[Model Artifacts]
+                            end
+                            
+                            subgraph External
+                                G[OpenRouter API]
+                                H[Sentry Monitoring]
+                                I[Cloud Storage]
+                            end
+                            
+                            A -->|HTTPS| C
+                            B -->|HTTPS| C
+                            C -->|Cache| D
+                            C -->|Log| E
+                            C -->|Load| F
+                            C -->|API Call| G
+                            C -->|Errors| H
+                            C -->|Backups| I
+                            
+                            style C fill:#EFF6FF,stroke:#1F6FEB
+                            style G fill:#ECFDF5,stroke:#10B981
+                    </div>
+                </div>
+                
+                <div class="grid md:grid-cols-2 gap-8 mb-12">
+                    <div class="bg-gray-50 rounded-xl p-6">
+                        <h3 class="text-xl font-semibold mb-4 text-[#1F6FEB]">Security & Privacy</h3>
+                        <ul class="list-disc pl-6 space-y-2 text-[#5B6472]">
+                            <li>No PII stored in logs (session IDs only)</li>
+                            <li>Automatic redaction of sensitive phrases (student IDs, financial amounts)</li>
+                            <li>API rate limiting (100 requests/minute per IP)</li>
+                            <li>Model artifacts encrypted at rest</li>
+                            <li>Monthly security audits</li>
+                        </ul>
+                    </div>
+                    
+                    <div class="bg-gray-50 rounded-xl p-6">
+                        <h3 class="text-xl font-semibold mb-4 text-[#1F6FEB]">Monitoring</h3>
+                        <ul class="list-disc pl-6 space-y-2 text-[#5B6472]">
+                            <li>Uptime monitoring (99.9% SLA)</li>
+                            <li>Anomaly detection on response times</li>
+                            <li>Daily TF-IDF coverage reports (unanswered questions)</li>
+                            <li>Weekly escalation reason analysis</li>
+                            <li>Monthly accuracy drift evaluation</li>
+                        </ul>
+                    </div>
+                </div>
+                
+                <div class="bg-white rounded-2xl shadow-md p-8">
+                    <h3 class="text-xl font-semibold mb-4 text-[#1F6FEB]">Configuration</h3>
+                    <p class="text-[#5B6472] mb-6">
+                        Key runtime parameters controlled via environment variables:
+                    </p>
+                    <div class="bg-gray-800 rounded-lg p-4 overflow-x-auto">
+                        <pre class="text-sm text-gray-200"><code># Required
+OPENROUTER_API_KEY={{OPENROUTER_API_KEY}}
+MODEL_NAME=meta-llama/llama-3-70b-instruct
+FAQ_DATABASE_PATH=data/faqs.csv
+
+# Thresholds
+TFIDF_MIN_SIMILARITY=0.65
+EMOTION_THRESHOLD=-0.3
+ESCALATION_CONFIDENCE=0.7
+
+# Performance
+MAX_RESPONSE_TOKENS=150
+CACHE_TTL_MINUTES=60
+RATE_LIMIT=100/1min
+
+# Optional
+ENABLE_RAG=false
+RAG_DOCUMENTS_PATH=null</code></pre>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Appendix Section -->
+        <section id="appendix" class="py-20 scroll-mt-20">
+            <div class="container mx-auto px-6 max-w-4xl">
+                <h2 class="text-3xl font-bold mb-12 section-title">Appendix</h2>
+                
+                <div class="space-y-12">
+                    <div class="bg-white rounded-2xl shadow-md p-8">
+                        <h3 class="text-xl font-semibold mb-4 text-[#1F6FEB]">Data Provenance</h3>
+                        <p class="text-[#5B6472] mb-4">
+                            Primary sources for the FAQ database and knowledge base:
+                        </p>
+                        <ul class="list-disc pl-6 mb-6 text-[#5B6472]">
+                            <li><strong>Official Policies:</strong> Scraped from university websites (2020-2023)</li>
+                            <li><strong>Advisor Knowledge:</strong> 500+ common questions compiled by student services staff</li>
+                            <li><strong>Historical Chats:</strong> Anonymized previous advisor conversations (2018-2022)</li>
+                        </ul>
+                        <p class="text-[#5B6472]">
+                            Cleaning pipeline included deduplication, standardization of academic terms, and validation by domain experts.
+                        </p>
+                    </div>
+                    
+                    <div class="bg-white rounded-2xl shadow-md p-8">
+                        <h3 class="text-xl font-semibold mb-4 text-[#1F6FEB]">Known Limitations</h3>
+                        <ul class="list-disc pl-6 space-y-2 text-[#5B6472]">
+                            <li>TF-IDF performance degrades for questions requiring multi-document synthesis</li>
+                            <li>Emotion detection less accurate for sarcasm or complex emotional states</li>
+                            <li>No native multilingual support (English only)</li>
+                            <li>Limited contextual memory beyond current session</li>
+                            <li>Cannot process uploaded documents (PDFs, images)</li>
+                        </ul>
+                    </div>
+                    
+                    <div class="bg-white rounded-2xl shadow-md p-8">
+                        <h3 class="text-xl font-semibold mb-4 text-[#1F6FEB]">Future Work</h3>
+                        <ul class="list-disc pl-6 space-y-2 text-[#5B6472]">
+                            <li>Hybrid retrieval (TF-IDF + semantic search)</li>
+                            <li>Personalization based on student profile (program, year)</li>
+                            <li>Multimodal input (document upload parsing)</li>
+                            <li>Enhanced conversation memory (5-turn context window)</li>
+                            <li>Proactive notifications (deadline reminders)</li>
+                        </ul>
+                    </div>
+                    
+                    <div class="bg-white rounded-2xl shadow-md p-8">
+                        <h3 class="text-xl font-semibold mb-4 text-[#1F6FEB]">Glossary</h3>
+                        <div class="overflow-x-auto">
+                            <table class="min-w-full divide-y divide-gray-200">
+                                <thead class="bg-gray-50">
+                                    <tr>
+                                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Term</th>
+                                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Definition</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="bg-white divide-y divide-gray-200">
+                                    <tr>
+                                        <td class="px-4 py-3 whitespace-nowrap font-medium">TF (Term Frequency)</td>
+                                        <td class="px-4 py-3">How often a term appears in a document</td>
+                                    </tr>
+                                    <tr>
+                                        <td class="px-4 py-3 whitespace-nowrap font-medium">IDF (Inverse Document Frequency)</td>
+                                        <td class="px-4 py-3">Measures term importance across documents</td>
+                                    </tr>
+                                    <tr>
+                                        <td class="px-4 py-3 whitespace-nowrap font-medium">P@K (Precision at K)</td>
+                                        <td class="px-4 py-3">Accuracy measure for top K retrieved items</td>
+                                    </tr>
+                                    <tr>
+                                        <td class="px-4 py-3 whitespace-nowrap font-medium">MAP (Mean Average Precision)</td>
+                                        <td class="px-4 py-3">Average precision across multiple queries</td>
+                                    </tr>
+                                    <tr>
+                                        <td class="px-4 py-3 whitespace-nowrap font-medium">MRR (Mean Reciprocal Rank)</td>
+                                        <td class="px-4 py-3">Average of reciprocal ranks of first relevant result</td>
+                                    </tr>
+                                    <tr>
+                                        <td class="px-4 py-3 whitespace-nowrap font-medium">RAG (Retrieval-Augmented Generation)</td>
+                                        <td class="px-4 py-3">Combining retrieval with LLM generation</td>
+                                    </tr>
+                                    <tr>
+                                        <td class="px-4 py-3 whitespace-nowrap font-medium">OSAP</td>
+                                        <td class="px-4 py-3">Ontario Student Assistance Program</td>
+                                    </tr>
+                                    <tr>
+                                        <td class="px-4 py-3 whitespace-nowrap font-medium">LLM</td>
+                                        <td class="px-4 py-3">Large Language Model (e.g., LLaMA 3)</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <footer class="bg-gray-50 py-12 border-t border-gray-200 no-print">
+        <div class="container mx-auto px-6 max-w-4xl text-center">
+            <p class="text-[#5B6472] mb-4">
+                Student Services Assistant (SSA) Chatbot Technical Report
+            </p>
+            <p class="text-sm text-gray-400">
+                Last updated: <span id="current-date-footer"></span> | Version 1.2.0
+            </p>
+        </div>
+    </footer>
+
+    <script>
+        // Initialize Mermaid
+        mermaid.initialize({
+            startOnLoad: true,
+            theme: 'default',
+            flowchart: {
+                useMaxWidth: true,
+                htmlLabels: true,
+                curve: 'basis'
+            }
+        });
+
+        // Set current date
+        const now = new Date();
+        const options = { year: 'numeric', month: 'long', day: 'numeric' };
+        document.getElementById('current-date').textContent = now.toLocaleDateString('en-US', options);
+        document.getElementById('current-date-footer').textContent = now.toLocaleDateString('en-US', options);
+
+        // Initialize charts
+        document.addEventListener('DOMContentLoaded', function() {
+            // Retrieval Performance Chart
+            const retrievalCtx = document.getElementById('retrievalChart').getContext('2d');
+            new Chart(retrievalCtx, {
+                type: 'bar',
+                data: {
+                    labels: ['P@5', 'P@6', 'P@10', 'MAP', 'MRR'],
+                    datasets: [{
+                        label: 'Retrieval Metrics',
+                        data: [0.82, 0.85, 0.89, 0.76, 0.81],
+                        backgroundColor: [
+                            'rgba(31, 111, 235, 0.7)',
+                            'rgba(31, 111, 235, 0.7)',
+                            'rgba(31, 111, 235, 0.7)',
+                            'rgba(14, 165, 233, 0.7)',
+                            'rgba(14, 165, 233, 0.7)'
+                        ],
+                        borderColor: [
+                            'rgba(31, 111, 235, 1)',
+                            'rgba(31, 111, 235, 1)',
+                            'rgba(31, 111, 235, 1)',
+                            'rgba(14, 165, 233, 1)',
+                            'rgba(14, 165, 233, 1)'
+                        ],
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            max: 1.0
+                        }
+                    }
+                }
+            });
+
+            // Source Distribution Chart
+            const sourceCtx = document.getElementById('sourceChart').getContext('2d');
+            new Chart(sourceCtx, {
+                type: 'doughnut',
+                data: {
+                    labels: ['TF-IDF', 'RAG', 'LLM Fallback', 'Escalated'],
+                    datasets: [{
+                        data: [68, 12, 15, 5],
+                        backgroundColor: [
+                            'rgba(31, 111, 235, 0.7)',
+                            'rgba(14, 165, 233, 0.7)',
+                            'rgba(139, 92, 246, 0.7)',
+                            'rgba(239, 68, 68, 0.7)'
+                        ],
+                        borderColor: [
+                            'rgba(31, 111, 235, 1)',
+                            'rgba(14, 165, 233, 1)',
+                            'rgba(139, 92, 246, 1)',
+                            'rgba(239, 68, 68, 1)'
+                        ],
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    plugins: {
+                        legend: {
+                            position: 'right',
+                        }
+                    }
+                }
+            });
+
+            // Time Comparison Chart
+            const timeCtx = document.getElementById('timeChart').getContext('2d');
+            new Chart(timeCtx, {
+                type: 'line',
+                data: {
+                    labels: ['Week 1', 'Week 2', 'Week 3', 'Week 4', 'Week 5'],
+                    datasets: [
+                        {
+                            label: 'Chatbot Resolution Time (minutes)',
+                            data: [2.1, 1.9, 1.7, 1.5, 1.3],
+                            borderColor: 'rgba(31, 111, 235, 1)',
+                            backgroundColor: 'rgba(31, 111, 235, 0.1)',
+                            tension: 0.3,
+                            fill: true
+                        },
+                        {
+                            label: 'Advisor Resolution Time (minutes)',
+                            data: [45, 42, 38, 40, 37],
+                            borderColor: 'rgba(239, 68, 68, 1)',
+                            backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                            tension: 0.3,
+                            fill: true
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            title: {
+                                display: true,
+                                text: 'Time (minutes)'
+                            }
+                        }
+                    }
+                }
+            });
+        });
+
+        // GSAP animations
+        gsap.registerPlugin(ScrollTrigger);
+
+        const sections = gsap.utils.toArray("section");
+        sections.forEach(section => {
+            gsap.from(section, {
+                scrollTrigger: {
+                    trigger: section,
+                    start: "top 80%",
+                    toggleActions: "play none none none"
+                },
+                opacity: 0,
+                y: 50,
+                duration: 0.8,
+                ease: "power2.out"
+            });
+        });
+
+        // Header navigation highlighting
+        const navLinks = document.querySelectorAll('.nav-link');
+        const sectionsForNav = document.querySelectorAll('section[id]');
+
+        window.addEventListener('scroll', () => {
+            let current = '';
+            
+
+</body>
+</html>
